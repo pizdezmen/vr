@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace Fantom
 {
@@ -121,15 +121,15 @@ namespace Fantom
         {
             var solid = new MeshBuilder();
             var steel = new Color(0.03f, 0.06f, 0.14f);
-            solid.Box(new Vector3(0f, 0f, -0.02f), new Vector3(0.03f, 0.03f, 0.16f), steel);          // рукоять
-            solid.Box(new Vector3(0f, 0f, 0.07f), new Vector3(0.16f, 0.024f, 0.024f), steel);        // гарда
+            solid.Box(new Vector3(0f, 0f, -0.02f), new Vector3(0.026f, 0.026f, 0.15f), steel);          // рукоять
+            solid.Box(new Vector3(0f, 0f, 0.07f), new Vector3(0.12f, 0.02f, 0.02f), steel);        // гарда
             solid.Box(new Vector3(0f, 0f, 0.08f + Tuning.PlayerBlade / 2f),
-                new Vector3(0.034f, 0.008f, Tuning.PlayerBlade), new Color(0.55f, 0.85f, 1.6f));       // клинок
+                new Vector3(0.026f, 0.007f, Tuning.PlayerBlade), new Color(0.55f, 0.85f, 1.6f));       // клинок
             sword = MeshBuilder.Object("Sword", swordHand, solid.ToMesh("Sword"), MeshBuilder.Material("Solid")).transform;
 
             var glow = new MeshBuilder();
             glow.Box(new Vector3(0f, 0f, 0.08f + Tuning.PlayerBlade / 2f),
-                new Vector3(0.07f, 0.024f, Tuning.PlayerBlade + 0.03f), new Color(0.05f, 0.25f, 1f, 0.3f));
+                new Vector3(0.042f, 0.016f, Tuning.PlayerBlade + 0.02f), new Color(0.05f, 0.25f, 1f, 0.3f));
             MeshBuilder.Object("SwordGlow", sword, glow.ToMesh("SwordGlow"), MeshBuilder.Material("Glow"));
 
             ApplyTilt();
@@ -297,8 +297,8 @@ namespace Fantom
             if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
             dir.Normalize();
             float scale = Mathf.Clamp(headPos.y / 1.62f, 0.6f, 1.25f);
-            phantom.Root.localScale = Vector3.one * scale;
-            Vector3 p = headPos + dir * (Tuning.FightDistance * scale);
+            phantom.Root.localScale = Vector3.one * (scale * Tuning.PhantomScale);
+            Vector3 p = headPos + dir * (Tuning.FightDistance * scale * Tuning.PhantomScale);
             p.y = 0f;
             phantom.Root.position = p;
             FacePlayer(1f);
