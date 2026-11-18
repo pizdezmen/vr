@@ -90,6 +90,11 @@ namespace Fantom
         {
             try
             {
+                // Высота считается от пола комнаты: пол игры совпадает с настоящим полом.
+                if (OVRManager.instance != null)
+                {
+                    OVRManager.instance.trackingOriginType = OVRManager.TrackingOrigin.FloorLevel;
+                }
                 OVRManager.foveatedRenderingLevel = OVRManager.FoveatedRenderingLevel.High;
                 OVRManager.useDynamicFoveatedRendering = true;
                 if (OVRManager.display != null)

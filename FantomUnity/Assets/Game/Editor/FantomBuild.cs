@@ -184,7 +184,16 @@ namespace Fantom.EditorTools
                     }
                 }
                 if (prefab == null) throw new Exception("OVRCameraRig prefab not found");
-                PrefabUtility.InstantiatePrefab(prefab);
+                var rig = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                // Высоту считаем от пола, а не от уровня глаз (в заготовке Meta стоит «от глаз»).
+                var manager = rig.GetComponent<OVRManager>();
+                if (manager != null)
+                {
+                    var so = new SerializedObject(manager);
+                    SerializedProperty origin = so.FindProperty("_trackingOriginType");
+                    if (origin != null) origin.intValue = (int)OVRManager.TrackingOrigin.FloorLevel;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                }
 
                 new GameObject("Game").AddComponent<FightGame>();
                 EditorSceneManager.SaveScene(scene, ScenePath);
