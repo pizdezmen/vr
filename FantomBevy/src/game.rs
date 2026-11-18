@@ -825,7 +825,7 @@ fn game_update(
         game.face_player(1.0);
 
         let mut board_pos = game.head_pos + dir * 4.2;
-        board_pos.y = game.head_pos.y + 1.35;
+        board_pos.y = game.head_pos.y + 2.0;
         if let Ok(mut panel) = transforms.get_mut(board.panel) {
             // The panel's front (+Z) faces the player.
             *panel = Transform::from_translation(board_pos).looking_to(board_pos - game.head_pos, Vec3::Y);

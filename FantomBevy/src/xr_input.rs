@@ -151,6 +151,21 @@ fn read_input(
     *frame += 1;
     if *frame % 120 == 1 {
         input.refresh_rate = session.get_display_refresh_rate().unwrap_or(0.0);
+        // The headset ignores a request made before the session is running (seen on Quest 3:
+        // asked for 90 at creation, stayed at 72), so ask again here until it takes effect.
+        if input.refresh_rate > 0.0
+            && (input.refresh_rate - tuning::TARGET_REFRESH_RATE).abs() > 1.0
+            && *frame < 120 * 2
+        {
+            match session.request_display_refresh_rate(tuning::TARGET_REFRESH_RATE) {
+                Ok(()) => info!(
+                    "[FantomBevy] asked again for {} Hz (was {})",
+                    tuning::TARGET_REFRESH_RATE,
+                    input.refresh_rate
+                ),
+                Err(e) => warn!("[FantomBevy] refresh rate request failed: {e}"),
+            }
+        }
     }
 }
 

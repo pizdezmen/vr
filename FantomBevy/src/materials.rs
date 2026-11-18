@@ -25,6 +25,15 @@ impl Plugin for FantomMaterialsPlugin {
             (&GLOW_SHADER, include_str!("shaders/glow.wgsl"), "fantom/glow.wgsl"),
             (&SOLID_SHADER, include_str!("shaders/solid.wgsl"), "fantom/solid.wgsl"),
         ] {
+            // On the PC the shader files are read from disk, so a look can be tuned by editing the
+            // .wgsl file and just running the preview again, without rebuilding.
+            #[cfg(not(target_os = "android"))]
+            let source = std::fs::read_to_string(format!(
+                "{}/src/shaders/{}",
+                env!("CARGO_MANIFEST_DIR"),
+                name.trim_start_matches("fantom/")
+            ))
+            .unwrap_or_else(|_| source.to_string());
             let _ = shaders.insert(handle.id(), Shader::from_wgsl(source, name));
         }
         app.add_plugins((

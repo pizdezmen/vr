@@ -69,3 +69,12 @@ categories = [
 [package.metadata.android.signing.release]
 path = "C:/Users/kohan/.android/debug.keystore"
 keystore_password = "android"
+
+# Quick builds of the PC preview (cargo run --profile preview --example preview): optimised, but
+# without the slow whole-program pass that the headset build uses.
+[profile.preview]
+inherits = "release"
+lto = "off"
+codegen-units = 16
+incremental = true
+panic = "unwind"

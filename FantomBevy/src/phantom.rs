@@ -9,7 +9,7 @@ use bevy::prelude::*;
 
 use crate::meshes::{Rng, face_axes};
 
-const CELL: f32 = 0.036; // cube grid step, m
+const CELL: f32 = 0.024; // cube grid step, m
 const CUBE: f32 = CELL * 0.86;
 pub const ARM_LENGTH: f32 = 0.55;
 pub const BLADE_LENGTH: f32 = 0.9;
@@ -124,47 +124,78 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
+/// Signed "inside" test for a slab bent like a blade: a diamond cross-section around a segment.
+fn spike(x: f32, y: f32, z: f32, from: [f32; 3], to: [f32; 3], r0: f32, r1: f32) -> bool {
+    let d = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+    let len2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    let k = (((x - from[0]) * d[0] + (y - from[1]) * d[1] + (z - from[2]) * d[2]) / len2).clamp(0.0, 1.0);
+    let (px, py, pz) = (from[0] + d[0] * k, from[1] + d[1] * k, from[2] + d[2] * k);
+    let r = lerp(r0, r1, k);
+    // Diamond (not round) cross-section gives flat facets like the reference.
+    (x - px).abs() + (y - py).abs() + (z - pz).abs() <= r
+}
+
 fn body_inside(ix: i32, iy: i32, iz: i32) -> bool {
     let (x, y, z) = (ix as f32 * CELL, iy as f32 * CELL, iz as f32 * CELL);
     let ax = x.abs();
 
-    // Dark void where the face would be.
-    if ell(x, y, z, [0.0, 1.585, 0.11], [0.085, 0.105, 0.115]) {
+    // Dark void where the face would be: a tall opening in the front of the hood.
+    if ell(x, y, z, [0.0, 1.575, 0.12], [0.078, 0.125, 0.125]) {
         return false;
     }
-    // Hood with a sharp crown bent backwards.
-    if ell(x, y, z, [0.0, 1.6, -0.01], [0.14, 0.17, 0.15]) {
+    // Hood: a tall shell with a sharp crown leaning back, and a cowl lying on the shoulders.
+    if ell(x, y, z, [0.0, 1.61, -0.01], [0.135, 0.175, 0.155]) {
         return true;
     }
-    if ax / 0.07 + (y - 1.77).abs() / 0.11 + (z + 0.07).abs() / 0.1 <= 1.0 {
+    if ax / 0.085 + (y - 1.8).abs() / 0.15 + (z + 0.06).abs() / 0.12 <= 1.0 {
         return true;
     }
-    // Sharp shoulders: a faceted bar and pauldrons raised outwards and up.
-    if ax / 0.36 + (y - 1.4).abs() / 0.13 + z.abs() / 0.17 <= 1.0 {
+    if ell(x, y, z, [0.0, 1.47, -0.02], [0.19, 0.075, 0.15]) {
         return true;
     }
-    if (0.14..=0.47).contains(&ax) {
-        let along = (ax - 0.14) / 0.33;
-        let ridge = 1.41 + 0.2 * along;
-        if (y - ridge).abs() <= 0.085 * (1.0 - along) + 0.02 && z.abs() <= 0.14 * (1.0 - along) + 0.02 {
-            return true;
-        }
-    }
-    // Torso.
-    if ell(x, y, z, [0.0, 1.2, 0.0], [0.2, 0.28, 0.125]) {
+    // Sharp shoulders: two layered plates on each side, raised outwards and up, ending in spikes.
+    let sx = if x < 0.0 { -1.0 } else { 1.0 };
+    if spike(x, y, z, [sx * 0.13, 1.43, 0.0], [sx * 0.5, 1.66, -0.02], 0.15, 0.012) {
         return true;
     }
-    // Loose sleeve (the phantom's free arm).
-    if ell(x, y, z, [-0.29, 1.12, 0.02], [0.065, 0.3, 0.07]) {
+    if spike(x, y, z, [sx * 0.16, 1.37, 0.01], [sx * 0.43, 1.33, 0.0], 0.13, 0.02) {
         return true;
     }
-    // Robe: widens towards the bottom, ragged hem, no legs.
-    if y <= 1.05 && y >= 0.36 + hash(ix, iz) * 0.3 {
-        let t = (1.05 - y) / 0.7;
-        let rx = lerp(0.17, 0.27, t);
-        let rz = lerp(0.115, 0.19, t);
-        if x * x / (rx * rx) + z * z / (rz * rz) <= 1.0 {
-            return true;
+    if spike(x, y, z, [sx * 0.2, 1.46, -0.06], [sx * 0.36, 1.74, -0.1], 0.07, 0.008) {
+        return true;
+    }
+    // Torso with a faceted chest ridge.
+    if ell(x, y, z, [0.0, 1.2, 0.0], [0.2, 0.3, 0.125]) {
+        return true;
+    }
+    if ax / 0.16 + (y - 1.27).abs() / 0.2 + (z - 0.07).abs() / 0.1 <= 1.0 {
+        return true;
+    }
+    // Free arm: a sleeve hanging down with a bracer fin.
+    if ell(x, y, z, [-0.3, 1.13, 0.02], [0.062, 0.3, 0.068]) {
+        return true;
+    }
+    if spike(x, y, z, [-0.33, 0.98, 0.0], [-0.43, 1.27, -0.03], 0.06, 0.008) {
+        return true;
+    }
+    if spike(x, y, z, [-0.3, 0.86, 0.03], [-0.31, 0.7, 0.05], 0.05, 0.006) {
+        return true;
+    }
+    // Robe: narrow at the waist, a little wider below, then breaking into hanging strands
+    // that get longer towards the middle and end in a point. No legs.
+    if y <= 1.06 {
+        let t = ((1.06 - y) / 0.5).clamp(0.0, 1.0);
+        let rx = lerp(0.165, 0.25, t);
+        let rz = lerp(0.115, 0.175, t);
+        let r = (x * x / (rx * rx) + z * z / (rz * rz)).sqrt();
+        if r <= 1.0 {
+            // Strands are two cells wide; the length is random per strand.
+            let strand = hash(ix.div_euclid(2), iz.div_euclid(2));
+            let centre = (x * x / (0.25 * 0.25) + z * z / (0.175 * 0.175)).sqrt().min(1.0);
+            let bottom = 0.12 + centre.powf(1.4) * 0.42 + strand * 0.3;
+            if y >= bottom {
+                return true;
+            }
         }
     }
     false
@@ -172,7 +203,11 @@ fn body_inside(ix: i32, iy: i32, iz: i32) -> bool {
 
 fn arm_inside(ix: i32, iy: i32, iz: i32) -> bool {
     let (x, y, z) = (ix as f32 * CELL, iy as f32 * CELL, iz as f32 * CELL);
-    ell(x, y, z, [0.0, 0.0, ARM_LENGTH / 2.0], [0.062, 0.062, ARM_LENGTH / 2.0 + 0.03])
+    if ell(x, y, z, [0.0, 0.0, ARM_LENGTH / 2.0], [0.06, 0.06, ARM_LENGTH / 2.0 + 0.03]) {
+        return true;
+    }
+    // Bracer fin on the forearm.
+    spike(x, y, z, [0.0, 0.03, 0.3], [0.0, 0.13, 0.52], 0.055, 0.008)
 }
 
 #[derive(Default)]
@@ -193,7 +228,7 @@ impl VoxelData {
             rng.next() * 2.0 - 1.0,
             rng.next() * 2.0 - 1.0,
             rng.next() * 2.0 - 1.0,
-            0.55 + rng.next() * 0.45,
+            rng.next(),
         ];
         let info = [kind as f32, rng.next()];
         for f in 0..6 {
@@ -241,11 +276,11 @@ fn voxelize(
                 let mut kind = 0;
                 if part == 0 {
                     // Walls of the void under the hood: almost black.
-                    let near_cavity = ell(x, y, z, [0.0, 1.585, 0.11], [0.13, 0.15, 0.16]);
-                    let inner_hood = ell(x, y, z, [0.0, 1.6, -0.01], [0.1, 0.13, 0.11]);
+                    let near_cavity = ell(x, y, z, [0.0, 1.575, 0.12], [0.12, 0.165, 0.165]);
+                    let inner_hood = ell(x, y, z, [0.0, 1.61, -0.01], [0.105, 0.145, 0.125]);
                     if near_cavity && inner_hood {
                         kind = 1;
-                    } else if z > 0.06 && x.abs() + (y - CORE.y).abs() <= 0.075 {
+                    } else if z > 0.1 && x.abs() + (y - CORE.y).abs() <= 0.06 {
                         kind = 2; // weak point: a diamond on the chest
                     }
                 }
@@ -259,35 +294,61 @@ fn voxelize(
 pub fn build_mesh() -> (Mesh, usize) {
     let mut data = VoxelData::default();
     let mut rng = Rng(0x9E3779B9);
-    voxelize(&mut data, &mut rng, body_inside, 0, [-14, 8, -7], [14, 54, 7]);
+    let cells = |m: f32| (m / CELL).round() as i32;
+    voxelize(
+        &mut data,
+        &mut rng,
+        body_inside,
+        0,
+        [cells(-0.56), cells(0.08), cells(-0.3)],
+        [cells(0.56), cells(2.0), cells(0.3)],
+    );
 
     // Pixels falling off the hem.
-    for _ in 0..90 {
+    for _ in 0..170 {
         let angle = rng.next() * std::f32::consts::TAU;
         let radius = rng.next().sqrt();
         let p = Vec3::new(
             angle.cos() * 0.25 * radius,
-            0.36 + rng.next() * 0.2,
+            0.2 + rng.next() * 0.35,
             angle.sin() * 0.17 * radius,
         );
         data.cube(&mut rng, p, 0, 3, CUBE);
     }
 
-    voxelize(&mut data, &mut rng, arm_inside, 1, [-3, -3, -1], [3, 3, 17]);
+    voxelize(
+        &mut data,
+        &mut rng,
+        arm_inside,
+        1,
+        [cells(-0.1), cells(-0.1), cells(-0.06)],
+        [cells(0.1), cells(0.16), cells(0.62)],
+    );
 
-    // Blade and guard.
-    let mut z = -0.06;
+    // Sword: a wide blade tapering to a point, a cross-guard and a pommel. Blade cubes are smaller.
+    let step = CELL * 0.8;
+    let size = step * 0.9;
+    let mut z = 0.07;
     while z <= BLADE_LENGTH {
-        data.cube(&mut rng, Vec3::new(0.0, 0.0, z), 2, 4, CUBE);
-        if z > 0.06 && z < BLADE_LENGTH - 0.05 {
-            data.cube(&mut rng, Vec3::new(0.0, CELL * 0.7, z), 2, 4, CUBE);
+        let along = (z - 0.07) / (BLADE_LENGTH - 0.07);
+        let half_width = 0.034 * (1.0 - along * along) + 0.004;
+        let mut x = -half_width;
+        while x <= half_width + 1e-4 {
+            data.cube(&mut rng, Vec3::new(x, 0.0, z), 2, 4, size);
+            x += step;
         }
-        z += CELL * 0.75;
+        z += step;
     }
-    let mut x = -0.1;
-    while x <= 0.1 {
-        data.cube(&mut rng, Vec3::new(x, 0.0, 0.06), 2, 4, CUBE);
-        x += CELL;
+    let mut x = -0.13;
+    while x <= 0.13 + 1e-4 {
+        data.cube(&mut rng, Vec3::new(x, 0.0, 0.06), 2, 5, size);
+        data.cube(&mut rng, Vec3::new(x, step, 0.06), 2, 5, size);
+        x += step;
+    }
+    let mut z = -0.1;
+    while z < 0.05 {
+        data.cube(&mut rng, Vec3::new(0.0, 0.0, z), 2, 5, size);
+        z += step;
     }
 
     let cubes = data.centers.len() / 24;

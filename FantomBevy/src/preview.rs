@@ -48,7 +48,7 @@ fn spawn_camera(mut commands: Commands) {
     commands.spawn((
         XrCamera(0),
         Projection::Perspective(PerspectiveProjection {
-            fov: 95f32.to_radians(),
+            fov: 80f32.to_radians(),
             near: 0.05,
             ..default()
         }),
