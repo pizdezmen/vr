@@ -13,6 +13,7 @@ const PHANTOM_SHADER: Handle<Shader> = uuid_handle!("6f0c2d0e-5a51-4c39-9a1e-0f3
 const GRID_SHADER: Handle<Shader> = uuid_handle!("6f0c2d0e-5a51-4c39-9a1e-0f3b6f1a0002");
 const GLOW_SHADER: Handle<Shader> = uuid_handle!("6f0c2d0e-5a51-4c39-9a1e-0f3b6f1a0003");
 const SOLID_SHADER: Handle<Shader> = uuid_handle!("6f0c2d0e-5a51-4c39-9a1e-0f3b6f1a0004");
+const GHOST_SHADER: Handle<Shader> = uuid_handle!("6f0c2d0e-5a51-4c39-9a1e-0f3b6f1a0005");
 
 pub struct FantomMaterialsPlugin;
 
@@ -24,6 +25,7 @@ impl Plugin for FantomMaterialsPlugin {
             (&GRID_SHADER, include_str!("shaders/grid.wgsl"), "fantom/grid.wgsl"),
             (&GLOW_SHADER, include_str!("shaders/glow.wgsl"), "fantom/glow.wgsl"),
             (&SOLID_SHADER, include_str!("shaders/solid.wgsl"), "fantom/solid.wgsl"),
+            (&GHOST_SHADER, include_str!("shaders/ghost.wgsl"), "fantom/ghost.wgsl"),
         ] {
             // On the PC the shader files are read from disk, so a look can be tuned by editing the
             // .wgsl file and just running the preview again, without rebuilding.
@@ -41,6 +43,7 @@ impl Plugin for FantomMaterialsPlugin {
             MaterialPlugin::<GridMaterial>::default(),
             MaterialPlugin::<GlowMaterial>::default(),
             MaterialPlugin::<SolidMaterial>::default(),
+            MaterialPlugin::<GhostMaterial>::default(),
         ));
     }
 }
@@ -141,6 +144,32 @@ pub struct SolidMaterial {
 impl Material for SolidMaterial {
     fn fragment_shader() -> ShaderRef {
         SOLID_SHADER.into()
+    }
+    fn enable_prepass() -> bool {
+        false
+    }
+    fn enable_shadows() -> bool {
+        false
+    }
+}
+
+/// The living phantom: see `shaders/ghost.wgsl`.
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+pub struct GhostMaterial {
+    /// x: open glow, y: white flash, z: brightness
+    #[uniform(0)]
+    pub data: Vec4,
+}
+
+impl Default for GhostMaterial {
+    fn default() -> Self {
+        Self { data: Vec4::new(0.0, 0.0, 1.0, 0.0) }
+    }
+}
+
+impl Material for GhostMaterial {
+    fn fragment_shader() -> ShaderRef {
+        GHOST_SHADER.into()
     }
     fn enable_prepass() -> bool {
         false

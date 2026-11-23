@@ -10,20 +10,22 @@ use bevy_xr_utils::tracking_utils::{XrTrackedLeftGrip, XrTrackedRightGrip};
 
 use crate::xr_input::GameInput;
 
-/// (time in seconds, file name)
-const SHOTS: [(f32, &str); 6] = [
-    (1.2, "1_ready"),
-    (2.1, "2_assemble"),
-    (3.2, "3_idle"),
-    (4.6, "4_windup"),
-    (6.12, "5_dissolve_start"),
-    (6.45, "6_dissolve"),
-];
-const SWING_AT: f32 = 6.0;
+/// Pictures are taken every SHOT_STEP seconds from SHOT_FROM to SHOT_TO.
+const SHOT_FROM: f32 = 1.0;
+const SHOT_STEP: f32 = 0.25;
+const SHOT_TO: f32 = 10.0;
+/// FANTOM_SECONDS=60 keeps the preview running longer (for collecting strike numbers in the log).
+fn run_seconds() -> f32 {
+    std::env::var("FANTOM_SECONDS").ok().and_then(|v| v.parse().ok()).unwrap_or(SHOT_TO + 1.0)
+}
+const SWING_AT: f32 = 8.5;
 
 pub fn run() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
+        .add_plugins(DefaultPlugins.set(bevy::asset::AssetPlugin {
+            file_path: concat!(env!("CARGO_MANIFEST_DIR"), "/assets").to_string(),
+            ..default()
+        }).set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Fantom Bevy preview".into(),
                 resolution: WindowResolution::new(1280, 1280),
@@ -52,7 +54,12 @@ fn spawn_camera(mut commands: Commands) {
             near: 0.05,
             ..default()
         }),
-        Transform::from_xyz(0.0, 1.62, 0.0).looking_to(Vec3::new(0.0, -0.12, -1.0), Vec3::Y),
+        // FANTOM_CAM=side looks at the phantom from its left side instead of from the player's eyes.
+        if std::env::var("FANTOM_CAM").as_deref() == Ok("side") {
+            Transform::from_xyz(2.6, 1.2, -1.4).looking_at(Vec3::new(0.0, 1.0, -1.4), Vec3::Y)
+        } else {
+            Transform::from_xyz(0.0, 1.62, 0.0).looking_to(Vec3::new(0.0, -0.12, -1.0), Vec3::Y)
+        },
     ));
 }
 
@@ -83,12 +90,13 @@ fn drive(
             .with_rotation(Quat::from_rotation_z(-1.2 * (k - 0.3)) * hold);
     }
 
-    if *shot < SHOTS.len() && t >= SHOTS[*shot].0 {
-        let path = format!("Preview/{}.png", SHOTS[*shot].1);
+    let next = SHOT_FROM + *shot as f32 * SHOT_STEP;
+    if next <= SHOT_TO && t >= next {
+        let path = format!("Preview/t{:05.2}.png", next);
         commands.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
         *shot += 1;
     }
-    if t > SHOTS[SHOTS.len() - 1].0 + 1.0 {
+    if t > run_seconds() {
         exit.write(AppExit::Success);
     }
 }

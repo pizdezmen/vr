@@ -16,6 +16,10 @@ bevy_mod_xr = "0.6.0"
 bevy_xr_utils = "0.6.0"
 openxr = "0.21.1"
 
+[features]
+# Two extra phantoms striking non-stop, for measuring the frame rate with three.
+stress3 = []
+
 [profile.release]
 opt-level = 3
 lto = "thin"
@@ -27,6 +31,7 @@ panic = "abort"
 package = "com.fantomvr.bevy"
 build_targets = ["aarch64-linux-android"]
 runtime_libs = "runtime_libs"
+assets = "assets"
 apk_name = "FantomBevy"
 strip = "strip"
 

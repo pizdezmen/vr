@@ -3,3 +3,4 @@
 *.log
 *-logcat.txt
 Cargo.lock.bak
+quest-ip.txt

@@ -2,6 +2,7 @@
 
 mod board;
 mod game;
+mod mannequin;
 mod materials;
 mod meshes;
 mod phantom;
