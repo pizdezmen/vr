@@ -1,0 +1,7 @@
+/target
+/dist
+*.log
+*-logcat.txt
+Cargo.lock.bak
+quest-ip.txt
+/Preview

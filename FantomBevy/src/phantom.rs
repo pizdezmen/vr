@@ -1,0 +1,95 @@
+//! Pixel cloud for the phantom's appearance and death.
+//!
+//! The phantom itself is the animated Quaternius mannequin (see `mannequin.rs`). When it appears
+//! or is hit, a cloud of small glowing cubes is built from the mannequin's current pose and the
+//! shader in `shaders/phantom.wgsl` assembles or scatters it (from the point of impact).
+//!
+//! The mesh is built once, with every cube placed on one body part (a capsule between two bones,
+//! see `mannequin::BODY`); the shader puts the parts where the bones are. See `phantom.wgsl`.
+//! Vertex data is packed into standard attributes:
+//!   position = x, z sideways offset (m), y share of the way along the part,
+//!   normal = face normal,
+//!   tangent  = xyz corner offset, w part index,
+//!   color    = xyz random vector, w brightness,
+//!   uv       = x cube kind (0 body, 2 weak point), y random 0..1.
+
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::prelude::*;
+
+use crate::meshes::{Rng, face_axes};
+
+pub const DISSOLVE_LIFE: f32 = 0.75;
+pub const WAVE_SPEED: f32 = 2.6;
+pub const ASSEMBLE_TIME: f32 = 1.05;
+
+pub const KIND_BODY: u32 = 0;
+pub const KIND_CORE: u32 = 2;
+/// Body parts in the cloud: the 11 capsules of `mannequin::BODY`, the head, the weak point.
+pub const PARTS: usize = 13;
+pub const PART_HEAD: u32 = 11;
+pub const PART_CORE: u32 = 12;
+
+#[derive(Default)]
+pub struct CloudBuilder {
+    centers: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    corner_part: Vec<[f32; 4]>,
+    rnd_shade: Vec<[f32; 4]>,
+    kind_r01: Vec<[f32; 2]>,
+    indices: Vec<u32>,
+    pub cubes: usize,
+}
+
+impl CloudBuilder {
+    pub fn cube(&mut self, rng: &mut Rng, center: Vec3, part: u32, kind: u32, size: f32) {
+        let rnd = [
+            rng.next() * 2.0 - 1.0,
+            rng.next() * 2.0 - 1.0,
+            rng.next() * 2.0 - 1.0,
+            rng.next(),
+        ];
+        let info = [kind as f32, rng.next()];
+        for f in 0..6 {
+            let (n, u, v) = face_axes(f);
+            let start = self.centers.len() as u32;
+            for (su, sv) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+                let corner = (n + u * su + v * sv) * (size * 0.5);
+                self.centers.push(center.to_array());
+                self.normals.push(n.to_array());
+                self.corner_part.push([corner.x, corner.y, corner.z, part as f32]);
+                self.rnd_shade.push(rnd);
+                self.kind_r01.push(info);
+            }
+            self.indices
+                .extend_from_slice(&[start, start + 1, start + 2, start, start + 2, start + 3]);
+        }
+        self.cubes += 1;
+    }
+
+    /// Cubes on and just under the surface of body part `part`: a capsule of radius `r` and
+    /// length `len` (used only to choose how many rings of cubes it gets).
+    pub fn part(&mut self, rng: &mut Rng, part: u32, kind: u32, len: f32, r: f32, size: f32) {
+        let step = size * 1.15;
+        let rings = (len / step).ceil().max(1.0) as usize;
+        let around = ((std::f32::consts::TAU * r) / step).ceil().max(3.0) as usize;
+        for i in 0..=rings {
+            let along = i as f32 / rings as f32;
+            for j in 0..around {
+                let ang = (j as f32 + rng.next() * 0.6) / around as f32 * std::f32::consts::TAU;
+                let rr = r * (0.75 + 0.25 * rng.next());
+                self.cube(rng, Vec3::new(ang.cos() * rr, along, ang.sin() * rr), part, kind, size);
+            }
+        }
+    }
+
+    pub fn build(self) -> Mesh {
+        Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, self.centers)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, self.kind_r01)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, self.corner_part)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, self.rnd_shade)
+            .with_inserted_indices(Indices::U32(self.indices))
+    }
+}

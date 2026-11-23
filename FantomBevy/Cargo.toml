@@ -1,0 +1,85 @@
+[package]
+name = "fantom_bevy"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "fantom_bevy"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+# Bevy 0.19 is the newest engine version the OpenXR module supports (checked 2026-11-18).
+bevy = { version = "0.19.1", features = ["android-native-activity"] }
+bevy_mod_openxr = { version = "0.6.0", features = ["window_support"] }
+bevy_mod_xr = "0.6.0"
+bevy_xr_utils = "0.6.0"
+openxr = "0.21.1"
+
+[features]
+# Two extra phantoms striking non-stop, for measuring the frame rate with three.
+stress3 = []
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+# ---- Android packaging (cargo-apk) ----
+[package.metadata.android]
+package = "com.fantomvr.bevy"
+build_targets = ["aarch64-linux-android"]
+runtime_libs = "runtime_libs"
+assets = "assets"
+apk_name = "FantomBevy"
+strip = "strip"
+
+[package.metadata.android.sdk]
+min_sdk_version = 29
+target_sdk_version = 34
+
+[package.metadata.android.application]
+label = "Fantom Bevy"
+
+[[package.metadata.android.application.meta_data]]
+name = "com.oculus.intent.category.VR"
+value = "vr_only"
+
+[[package.metadata.android.application.meta_data]]
+name = "com.oculus.supportedDevices"
+value = "quest2|questpro|quest3|quest3s"
+
+[package.metadata.android.application.activity]
+theme = "@android:style/Theme.Black.NoTitleBar.Fullscreen"
+config_changes = "density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
+launch_mode = "singleTask"
+orientation = "landscape"
+resizeable_activity = false
+
+[[package.metadata.android.uses_feature]]
+name = "android.hardware.vr.headtracking"
+required = true
+version = 1
+
+[[package.metadata.android.application.activity.intent_filter]]
+actions = ["android.intent.action.MAIN"]
+categories = [
+    "com.oculus.intent.category.VR",
+    "android.intent.category.LAUNCHER",
+    "org.khronos.openxr.intent.category.IMMERSIVE_HMD",
+]
+
+# Test builds are signed with the standard Android debug key. A real key is needed before any store upload.
+[package.metadata.android.signing.release]
+path = "C:/Users/kohan/.android/debug.keystore"
+keystore_password = "android"
+
+# Quick builds of the PC preview (cargo run --profile preview --example preview): optimised, but
+# without the slow whole-program pass that the headset build uses.
+[profile.preview]
+inherits = "release"
+lto = "off"
+codegen-units = 16
+incremental = true
+panic = "unwind"
