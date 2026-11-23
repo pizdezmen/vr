@@ -100,7 +100,10 @@ struct Game {
     recover_clip: Clip,
     recover_from: f32,
     cloud_visible: bool,
+    cloud_built: bool,
     cloud_cubes: usize,
+    part_a: [Vec4; phantom::PARTS],
+    part_b: [Vec4; phantom::PARTS],
     fx: u32, // 0 none, 1 assemble, 2 dissolve
     fx_time: f32,
     fx_duration: f32,
@@ -182,7 +185,10 @@ impl Default for Game {
             recover_clip: Clip::Idle,
             recover_from: 0.0,
             cloud_visible: false,
+            cloud_built: false,
             cloud_cubes: 0,
+            part_a: [Vec4::ZERO; phantom::PARTS],
+            part_b: [Vec4::ZERO; phantom::PARTS],
             fx: 0,
             fx_time: 0.0,
             fx_duration: 0.0,
@@ -819,31 +825,49 @@ impl Game {
     }
 }
 
-/// Builds the pixel cloud from the mannequin's current pose, in the phantom's own space.
-fn build_cloud(game: &mut Game, bones: &Bones, root: &GlobalTransform, meshes: &mut Assets<Mesh>, handle: &Handle<Mesh>) -> Transform {
-    let to_local = root.affine().inverse();
-    let local = |p: Vec3| to_local.transform_point3(p);
+/// End points of the cloud's body parts (see `phantom::PARTS`) in world space, from the pose.
+fn part_ends(game: &Game, bones: &Bones) -> Option<[(Vec3, Vec3, f32); phantom::PARTS]> {
+    let s = game.root_scale;
+    let mut out = [(Vec3::ZERO, Vec3::ZERO, 0.0); phantom::PARTS];
+    for (i, (a, b, r)) in mannequin::BODY.iter().enumerate() {
+        out[i] = (bones.pos(a)?, bones.pos(b)?, *r);
+    }
+    let (neck, head) = (bones.pos("neck_01")?, bones.pos("Head")?);
+    let up = (head - neck).normalize_or_zero();
+    out[phantom::PART_HEAD as usize] = (head, head + up * (2.0 * mannequin::HEAD_LIFT + 0.06) * s, mannequin::HEAD_RADIUS);
+    let core = bones.pos("spine_03")? + game.forward() * 0.13 * s;
+    out[phantom::PART_CORE as usize] = (core, core + Vec3::Y * 0.02 * s, 0.035);
+    Some(out)
+}
+
+/// Builds the pixel cloud mesh once, sized from the mannequin's current pose.
+fn build_cloud_mesh(game: &mut Game, bones: &Bones, meshes: &mut Assets<Mesh>, handle: &Handle<Mesh>) {
+    let Some(parts) = part_ends(game, bones) else { return };
     let mut b = CloudBuilder::default();
-    let mut rng = Rng(0x5EED ^ (game.kills as u32).wrapping_mul(2654435761));
+    let mut rng = Rng(0x5EED);
     let size = t::PIXEL_SIZE;
-    for (a, c, r) in mannequin::BODY {
-        if let (Some(pa), Some(pc)) = (bones.pos(a), bones.pos(c)) {
-            b.capsule(&mut rng, local(pa), local(pc), r, size);
-        }
-    }
-    if let (Some(neck), Some(head)) = (bones.pos("neck_01"), bones.pos("Head")) {
-        let (n, h) = (local(neck), local(head));
-        b.ball(&mut rng, h + (h - n).normalize_or_zero() * mannequin::HEAD_LIFT, mannequin::HEAD_RADIUS, size);
-    }
-    if let Some(chest) = bones.pos("spine_03") {
-        let c = local(chest) + Vec3::Z * 0.13;
-        for _ in 0..14 {
-            let o = Vec3::new(rng.next() - 0.5, rng.next() - 0.5, (rng.next() - 0.5) * 0.3) * 0.08;
-            b.cube(&mut rng, c + o, phantom::KIND_CORE, size * 0.8);
-        }
+    for (i, (a, c, r)) in parts.iter().enumerate() {
+        let len = a.distance(*c) / game.root_scale;
+        let kind = if i as u32 == phantom::PART_CORE { phantom::KIND_CORE } else { phantom::KIND_BODY };
+        let size = if kind == phantom::KIND_CORE { size * 0.8 } else { size };
+        b.part(&mut rng, i as u32, kind, len, *r, size);
     }
     game.cloud_cubes = b.cubes;
     let _ = meshes.insert(handle.id(), b.build());
+    game.cloud_built = true;
+    info!("[FantomBevy] pixel cloud built: {} cubes", game.cloud_cubes);
+}
+
+/// Poses the pixel cloud like the mannequin is posed now: stores the parts' end points in the
+/// phantom's own space, and returns where the cloud itself goes.
+fn pose_cloud(game: &mut Game, bones: &Bones, root: &GlobalTransform) -> Transform {
+    let to_local = root.affine().inverse();
+    if let Some(parts) = part_ends(game, bones) {
+        for (i, (a, b, _)) in parts.iter().enumerate() {
+            game.part_a[i] = to_local.transform_point3(*a).extend(0.0);
+            game.part_b[i] = to_local.transform_point3(*b).extend(0.0);
+        }
+    }
     root.compute_transform()
 }
 
@@ -1055,7 +1079,10 @@ fn game_update(
             // cloud from it and let the pixels fly together.
             if game.frames_in_state == 2 {
                 let bones = Bones { body: &body, globals: &globals };
-                let tf = build_cloud(game, &bones, &root_global, &mut meshes, &scene.cloud_mesh);
+                if !game.cloud_built {
+                    build_cloud_mesh(game, &bones, &mut meshes, &scene.cloud_mesh);
+                }
+                let tf = pose_cloud(game, &bones, &root_global);
                 if let Ok(mut c) = transforms.get_mut(scene.cloud) {
                     *c = tf;
                 }
@@ -1169,7 +1196,7 @@ fn game_update(
             body.show(game.reaction, st);
             if st >= t::DYING_TIME {
                 let bones = Bones { body: &body, globals: &globals };
-                let tf = build_cloud(game, &bones, &root_global, &mut meshes, &scene.cloud_mesh);
+                let tf = pose_cloud(game, &bones, &root_global);
                 if let Ok(mut c) = transforms.get_mut(scene.cloud) {
                     *c = tf;
                 }
@@ -1268,9 +1295,8 @@ fn apply_phantom(
     }
     if game.cloud_visible {
         if let Some(mut m) = cloud_materials.get_mut(&scene.cloud_material) {
-            m.data.part0 = Mat4::IDENTITY;
-            m.data.part1 = Mat4::IDENTITY;
-            m.data.part2 = Mat4::IDENTITY;
+            m.data.part_a = game.part_a;
+            m.data.part_b = game.part_b;
             m.data.hit = game.hit.extend(0.0);
             m.data.push = game.push.extend(0.0);
             m.data.fx = Vec4::new(game.fx as f32, game.fx_time, 0.0, 0.0);

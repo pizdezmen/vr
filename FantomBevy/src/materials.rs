@@ -50,9 +50,9 @@ impl Plugin for FantomMaterialsPlugin {
 
 #[derive(ShaderType, Clone, Default)]
 pub struct PhantomUniform {
-    pub part0: Mat4,
-    pub part1: Mat4,
-    pub part2: Mat4,
+    /// Start and end of each body part of the pixel cloud, phantom space (see `phantom.wgsl`).
+    pub part_a: [Vec4; crate::phantom::PARTS],
+    pub part_b: [Vec4; crate::phantom::PARTS],
     pub hit: Vec4,
     pub push: Vec4,
     /// x mode (0 none, 1 assemble, 2 dissolve), y fx time, z heat, w open

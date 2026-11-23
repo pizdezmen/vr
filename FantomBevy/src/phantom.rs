@@ -4,9 +4,12 @@
 //! or is hit, a cloud of small glowing cubes is built from the mannequin's current pose and the
 //! shader in `shaders/phantom.wgsl` assembles or scatters it (from the point of impact).
 //!
+//! The mesh is built once, with every cube placed on one body part (a capsule between two bones,
+//! see `mannequin::BODY`); the shader puts the parts where the bones are. See `phantom.wgsl`.
 //! Vertex data is packed into standard attributes:
-//!   position = cube centre, normal = face normal,
-//!   tangent  = xyz corner offset, w part index (always 0 here),
+//!   position = x, z sideways offset (m), y share of the way along the part,
+//!   normal = face normal,
+//!   tangent  = xyz corner offset, w part index,
 //!   color    = xyz random vector, w brightness,
 //!   uv       = x cube kind (0 body, 2 weak point), y random 0..1.
 
@@ -22,6 +25,10 @@ pub const ASSEMBLE_TIME: f32 = 1.05;
 
 pub const KIND_BODY: u32 = 0;
 pub const KIND_CORE: u32 = 2;
+/// Body parts in the cloud: the 11 capsules of `mannequin::BODY`, the head, the weak point.
+pub const PARTS: usize = 13;
+pub const PART_HEAD: u32 = 11;
+pub const PART_CORE: u32 = 12;
 
 #[derive(Default)]
 pub struct CloudBuilder {
@@ -35,7 +42,7 @@ pub struct CloudBuilder {
 }
 
 impl CloudBuilder {
-    pub fn cube(&mut self, rng: &mut Rng, center: Vec3, kind: u32, size: f32) {
+    pub fn cube(&mut self, rng: &mut Rng, center: Vec3, part: u32, kind: u32, size: f32) {
         let rnd = [
             rng.next() * 2.0 - 1.0,
             rng.next() * 2.0 - 1.0,
@@ -50,7 +57,7 @@ impl CloudBuilder {
                 let corner = (n + u * su + v * sv) * (size * 0.5);
                 self.centers.push(center.to_array());
                 self.normals.push(n.to_array());
-                self.corner_part.push([corner.x, corner.y, corner.z, 0.0]);
+                self.corner_part.push([corner.x, corner.y, corner.z, part as f32]);
                 self.rnd_shade.push(rnd);
                 self.kind_r01.push(info);
             }
@@ -60,36 +67,19 @@ impl CloudBuilder {
         self.cubes += 1;
     }
 
-    /// Fills a capsule (segment `a`-`b`, radius `r`) with cubes on and just under its surface.
-    pub fn capsule(&mut self, rng: &mut Rng, a: Vec3, b: Vec3, r: f32, size: f32) {
-        let axis = b - a;
-        let len = axis.length().max(1e-4);
-        let dir = axis / len;
-        let side = if dir.y.abs() < 0.9 { dir.cross(Vec3::Y).normalize() } else { dir.cross(Vec3::X).normalize() };
-        let up = dir.cross(side);
+    /// Cubes on and just under the surface of body part `part`: a capsule of radius `r` and
+    /// length `len` (used only to choose how many rings of cubes it gets).
+    pub fn part(&mut self, rng: &mut Rng, part: u32, kind: u32, len: f32, r: f32, size: f32) {
         let step = size * 1.15;
         let rings = (len / step).ceil().max(1.0) as usize;
         let around = ((std::f32::consts::TAU * r) / step).ceil().max(3.0) as usize;
         for i in 0..=rings {
-            let p = a + axis * (i as f32 / rings as f32);
+            let along = i as f32 / rings as f32;
             for j in 0..around {
                 let ang = (j as f32 + rng.next() * 0.6) / around as f32 * std::f32::consts::TAU;
                 let rr = r * (0.75 + 0.25 * rng.next());
-                self.cube(rng, p + (side * ang.cos() + up * ang.sin()) * rr, KIND_BODY, size);
+                self.cube(rng, Vec3::new(ang.cos() * rr, along, ang.sin() * rr), part, kind, size);
             }
-        }
-    }
-
-    /// Fills a sphere with cubes on its surface.
-    pub fn ball(&mut self, rng: &mut Rng, c: Vec3, r: f32, size: f32) {
-        let n = ((4.0 * std::f32::consts::PI * r * r) / (size * size * 1.3)).ceil() as usize;
-        for i in 0..n {
-            // Even spread over the sphere (golden spiral).
-            let y = 1.0 - 2.0 * (i as f32 + 0.5) / n as f32;
-            let rad = (1.0 - y * y).sqrt();
-            let ang = i as f32 * 2.399_963;
-            let rr = r * (0.8 + 0.2 * rng.next());
-            self.cube(rng, c + Vec3::new(ang.cos() * rad, y, ang.sin() * rad) * rr, KIND_BODY, size);
         }
     }
 

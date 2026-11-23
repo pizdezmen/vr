@@ -1,18 +1,21 @@
-// The whole phantom: every cube lives in one mesh and one draw call.
-// Assembly, dissolve and the falling hem pixels are computed on the GPU.
+// The phantom's pixel cloud: it assembles into the phantom and scatters when the phantom is hit.
+// The mesh is built once; every cube belongs to one body part (a capsule between two bones) and
+// is placed along it here, from the part's end points sent by the game. So posing the cloud costs
+// a few numbers per frame, not a new mesh.
 // Vertex data is packed into standard attributes:
-//   position = cube centre (in its part's space), normal = face normal,
-//   tangent  = xyz corner offset, w part index (0 body, 1 arm, 2 blade),
+//   position = cube place on its part: x, z sideways offsets (m), y share of the way from a to b,
+//   normal = face normal,
+//   tangent  = xyz corner offset, w part index,
 //   color    = xyz random vector, w brightness,
-//   uv       = x cube kind (0 body, 1 hood void, 2 weak point, 3 falling pixel, 4 blade, 5 hilt),
-//              y random 0..1.
+//   uv       = x cube kind (0 body, 2 weak point), y random 0..1.
 #import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
 #import bevy_pbr::mesh_view_bindings::{globals, view}
 
+const PARTS: u32 = 13u;
+
 struct PhantomUniform {
-    part0: mat4x4<f32>,
-    part1: mat4x4<f32>,
-    part2: mat4x4<f32>,
+    part_a: array<vec4<f32>, 13>,   // part start, phantom space
+    part_b: array<vec4<f32>, 13>,   // part end, phantom space
     hit: vec4<f32>,   // hit point, phantom space
     push: vec4<f32>,  // sword velocity, phantom space
     fx: vec4<f32>,    // x mode (0 none, 1 assemble, 2 dissolve), y fx time, z heat, w open
@@ -43,17 +46,24 @@ struct VertexOutput {
 fn vertex(v: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
-    let part = i32(v.tangent.w + 0.5);
-    var pm = u.part0;
-    if part == 1 {
-        pm = u.part1;
-    } else if part == 2 {
-        pm = u.part2;
+    let part = min(u32(v.tangent.w + 0.5), PARTS - 1u);
+    let a = u.part_a[part].xyz;
+    let b = u.part_b[part].xyz;
+    let axis = b - a;
+    var dir = vec3<f32>(0.0, 1.0, 0.0);
+    if dot(axis, axis) > 1e-8 {
+        dir = normalize(axis);
     }
-    let pm3 = mat3x3<f32>(pm[0].xyz, pm[1].xyz, pm[2].xyz);
-    var pos = (pm * vec4<f32>(v.position, 1.0)).xyz;
-    let corner = pm3 * v.tangent.xyz;
-    let nrm = pm3 * v.normal;
+    // Same side directions as the game uses (any two directions across the part would do).
+    var side = cross(dir, vec3<f32>(1.0, 0.0, 0.0));
+    if abs(dir.y) < 0.9 {
+        side = cross(dir, vec3<f32>(0.0, 1.0, 0.0));
+    }
+    side = normalize(side);
+    let up = cross(dir, side);
+    var pos = a + axis * v.position.y + side * v.position.x + up * v.position.z;
+    let corner = v.tangent.xyz;
+    let nrm = v.normal;
     let rnd = v.color.xyz;
     let shade = v.color.w;
     let kind = v.uv.x;
